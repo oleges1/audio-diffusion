@@ -48,6 +48,8 @@ def create_model_and_diffusion(
     num_heads_upsample,
     attention_resolutions,
     dropout,
+    in_specs,
+    dim,
     diffusion_steps,
     noise_schedule,
     timestep_respacing,

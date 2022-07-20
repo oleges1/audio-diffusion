@@ -4,25 +4,26 @@ from mpi4py import MPI
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
+from .vctk import VCTK
 
 def audio_data_defaults():
     """
     Defaults for audio training.
     """
     return dict(
-        "root": '../data',
-        "segment_size": 8192,
-        "num_mels": 80,
+        root='../data',
+        segment_size=8192,
+        num_mels=80,
         # "num_freq": 1025,
-        "n_fft": 1024,
-        "hop_size": 256,
-        "win_size": 1024,
-        "sampling_rate": 16000
+        n_fft=1024,
+        hop_size=256,
+        win_size=1024,
+        sampling_rate=16000
     )
 
 
 def load_data(
-    data_dir, batch_size, deterministic=False, *args, **kwargs
+    batch_size, deterministic=False, *args, **kwargs
 ):
     """
     For a dataset, create a generator over (mels, kwargs) pairs.
@@ -32,7 +33,7 @@ def load_data(
     :param deterministic: if True, yield results in a deterministic order.
     """
 
-    dataset = VCTK(data_dir, *args, split='train', **kwargs)
+    dataset = VCTK(*args, split='train', **kwargs)
 
     if deterministic:
         loader = DataLoader(

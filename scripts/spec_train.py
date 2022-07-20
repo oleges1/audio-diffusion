@@ -3,6 +3,8 @@ Train a diffusion model on images.
 """
 
 import argparse
+import sys
+sys.path.append('.')
 
 from improved_diffusion import dist_util, logger
 from improved_diffusion.image_datasets import load_data
@@ -32,7 +34,6 @@ def main():
 
     logger.log("creating data loader...")
     data = load_data(
-        data_dir=args.data_dir,
         batch_size=args.batch_size,
         **args_to_dict(args, audio_data_defaults().keys())
     )
@@ -59,7 +60,6 @@ def main():
 
 def create_argparser():
     defaults = dict(
-        data_dir="",
         schedule_sampler="uniform",
         lr=1e-4,
         weight_decay=0.0,
@@ -74,6 +74,7 @@ def create_argparser():
         fp16_scale_growth=1e-3,
     )
     defaults.update(model_and_diffusion_defaults())
+    defaults.update(audio_data_defaults())
     parser = argparse.ArgumentParser()
     add_dict_to_argparser(parser, defaults)
     return parser
