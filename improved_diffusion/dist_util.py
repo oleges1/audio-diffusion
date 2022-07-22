@@ -13,7 +13,7 @@ import torch.distributed as dist
 
 # Change this to reflect your cluster layout.
 # The GPU for a given rank is (rank % GPUS_PER_NODE).
-GPUS_PER_NODE = 8
+GPUS_PER_NODE = 4
 
 SETUP_RETRY_COUNT = 3
 
@@ -32,6 +32,7 @@ def setup_dist():
         hostname = "localhost"
     else:
         hostname = socket.gethostbyname(socket.getfqdn())
+    print(hostname)
     os.environ["MASTER_ADDR"] = comm.bcast(hostname, root=0)
     os.environ["RANK"] = str(comm.rank)
     os.environ["WORLD_SIZE"] = str(comm.size)

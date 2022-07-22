@@ -121,7 +121,7 @@ def create_model(
         in_channels=2 * in_specs,
         dims=dim,
         model_channels=num_channels,
-        out_channels=(3 if not learn_sigma else 6),
+        out_channels=(2 * in_specs if not learn_sigma else 4 * in_specs),
         num_res_blocks=num_res_blocks,
         attention_resolutions=tuple(attention_ds),
         dropout=dropout,
