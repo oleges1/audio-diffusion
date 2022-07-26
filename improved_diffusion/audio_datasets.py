@@ -18,6 +18,7 @@ def audio_data_defaults():
         n_fft=1024,
         hop_size=256,
         win_size=1024,
+        raw_wave=True,
         # sampling_rate=16000
     )
 

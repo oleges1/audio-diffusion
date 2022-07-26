@@ -20,7 +20,8 @@ def model_and_diffusion_defaults():
         num_heads_upsample=-1,
         attention_resolutions="16,8",
         dropout=0.0,
-        in_specs=513,
+        # in_specs=2*513,
+        in_specs=1,
         dim=1,
         learn_sigma=False,
         sigma_small=False,
@@ -118,10 +119,10 @@ def create_model(
         attention_ds.append(image_size // int(res))
 
     return UNetModel(
-        in_channels=2 * in_specs,
+        in_channels=in_specs,
         dims=dim,
         model_channels=num_channels,
-        out_channels=(2 * in_specs if not learn_sigma else 4 * in_specs),
+        out_channels=(in_specs if not learn_sigma else 2 * in_specs),
         num_res_blocks=num_res_blocks,
         attention_resolutions=tuple(attention_ds),
         dropout=dropout,

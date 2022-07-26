@@ -30,7 +30,7 @@ def spectrogram(y, n_fft, hop_size, win_size, center=False):
 class VCTK(datasets.DR_VCTK):
     def __init__(
             self, root, segment_size, n_fft, 
-            hop_size, win_size,
+            hop_size, win_size, raw_wave,
             subset='train', zero_out_percent=None
         ):
         super().__init__(root, subset, download=True)
@@ -40,6 +40,7 @@ class VCTK(datasets.DR_VCTK):
         self.hop_size = hop_size
         self.win_size = win_size
         self.zero_out_percent = zero_out_percent
+        self.raw_wave = raw_wave
 
     
     def __getitem__(self, i):
@@ -56,6 +57,9 @@ class VCTK(datasets.DR_VCTK):
         else:
             audio = torch.nn.functional.pad(audio, (0, self.segment_size - audio.size(1)), 'constant')
         
+        if self.raw_wave:
+            return audio, {}
+
         speca = spectrogram(audio, self.n_fft, self.hop_size, self.win_size,
                                    center=False)
         

@@ -28,15 +28,6 @@ import torchaudio
 
 hann_window = {}
 
-def to_waveform(sample, n_fft, hop_size, win_size, center=True):
-    global hann_window
-    if str(sample.device) not in hann_window:
-        hann_window[str(sample.device)] = th.hann_window(win_size).to(sample.device)
-    sample = rearrange(sample, 'B (S D) T -> B S T D', D=2)
-    wave = th.istft(sample, n_fft, hop_length=hop_size, win_length=win_size, window=hann_window[str(sample.device)],
-                      center=center, normalized=False, onesided=True)
-    return wave.unsqueeze(1)
-
 save_path = 'wavs/'
 
 def main():
@@ -68,17 +59,15 @@ def main():
         sample_fn = (
             diffusion.p_sample_loop if not args.use_ddim else diffusion.ddim_sample_loop
         )
-        sample = sample_fn(
+        wavs = sample_fn(
             model,
             # (args.batch_size, args.in_specs * 2, 32),
-            (args.batch_size, args.in_specs, 32),
+            # (args.batch_size, args.in_specs, 8192 * 4),
+            (args.batch_size, args.in_specs, 8192),
             clip_denoised=args.clip_denoised,
             model_kwargs=model_kwargs,
             progress=True
         )
-        print(sample.shape, "sample, should be only one batch dimension")
-        wavs = to_waveform(sample, args.n_fft, args.hop_size, args.win_size).contiguous()
-        print(wavs.shape, "wavs, should be only one batch dimension")
 
         gathered_samples = [th.zeros_like(wavs) for _ in range(dist.get_world_size())]
         dist.all_gather(gathered_samples, wavs)  # gather not supported with NCCL
