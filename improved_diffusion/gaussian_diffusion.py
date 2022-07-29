@@ -480,15 +480,15 @@ class GaussianDiffusion:
                 yield out
                 img = out["sample"]
 
-                if i % 50 == 1:
-                    for j in range(len(img)):
-                        speca = librosa.stft(img[j].cpu().numpy())[0]
-                        # speca = img[j].cpu().numpy()
-                        plt.figure(figsize=(10, 10))
-                        librosa.display.specshow(librosa.amplitude_to_db(np.abs(speca), ref=np.max))
-                        plt.colorbar()
-                        plt.savefig(f'specs_from_inference/speca_from_raw_v2_step{i}_batch{j}.png')
-                        plt.close()
+                # if i % 50 == 1:
+                #     for j in range(len(img)):
+                #         speca = librosa.stft(img[j].cpu().numpy())[0]
+                #         # speca = img[j].cpu().numpy()
+                #         plt.figure(figsize=(10, 10))
+                #         librosa.display.specshow(librosa.amplitude_to_db(np.abs(speca), ref=np.max))
+                #         plt.colorbar()
+                #         plt.savefig(f'specs_from_inference/speca_from_raw_v2_step{i}_batch{j}.png')
+                #         plt.close()
                 # plt.imshow(img)
                 # plt.show()
 
