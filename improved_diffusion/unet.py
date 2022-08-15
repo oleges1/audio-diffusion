@@ -473,7 +473,8 @@ class UNetModel(nn.Module):
         ), "must specify y if and only if the model is class-conditional"
 
         hs = []
-        emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
+        emb0 = timestep_embedding(timesteps, self.model_channels)
+        emb = self.time_embed(emb0)
 
         if self.num_classes is not None:
             assert y.shape == (x.shape[0],)

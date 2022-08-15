@@ -23,6 +23,7 @@ from improved_diffusion.script_util import (
     args_to_dict,
 )
 from improved_diffusion.audio_datasets import audio_data_defaults
+from improved_diffusion.audio_datasets import load_data
 from einops import rearrange
 import torchaudio
 
@@ -49,30 +50,61 @@ def main():
     logger.log("sampling...")
     all_wavs = []
     all_labels = []
-    while len(all_wavs) * args.batch_size < args.num_samples:
-        model_kwargs = {}
-        if args.class_cond:
-            classes = th.randint(
-                low=0, high=NUM_CLASSES, size=(args.batch_size,), device=dist_util.dev()
-            )
-            model_kwargs["y"] = classes
-        sample_fn = (
-            diffusion.p_sample_loop if not args.use_ddim else diffusion.ddim_sample_loop
-        )
-        wavs = sample_fn(
-            model,
-            # (args.batch_size, args.in_specs * 2, 32),
-            # (args.batch_size, args.in_specs, 8192 * 4),
-            (args.batch_size, args.in_specs, 8192),
-            clip_denoised=args.clip_denoised,
-            model_kwargs=model_kwargs,
-            progress=True
-        )
+    if args.use_ddrm:
+        sample_fn = diffusion.ddrm_sample            
+    elif args.use_ddim:
+        sample_fn = diffusion.ddim_sample_loop
+    else:
+        sample_fn = diffusion.p_sample_loop 
 
-        gathered_samples = [th.zeros_like(wavs) for _ in range(dist.get_world_size())]
-        dist.all_gather(gathered_samples, wavs)  # gather not supported with NCCL
-        all_wavs.extend([sample.cpu() for sample in gathered_samples])
-        logger.log(f"created {len(all_wavs) * args.batch_size} samples")
+    if args.use_ddrm:
+        data = load_data(batch_size=args.batch_size, subset='test', **args_to_dict(args, audio_data_defaults().keys()), deterministic=True)
+        for batch, cond in data:
+            print('Using DDRM sampling')
+            if len(all_wavs) * args.batch_size > args.num_samples:
+                break
+            model_kwargs = {}
+            wavs = sample_fn(model,
+                (args.batch_size, args.in_specs, 8192),
+                progress=True,
+                device='cpu',
+                clear_signal=batch,
+                sigma_0=args.sigma_0,
+                etaA=args.etaA,
+                etaB=args.etaB,
+                etaC=args.etaC,
+                model_kwargs=model_kwargs
+            )
+
+            gathered_samples = [th.zeros_like(wavs) for _ in range(dist.get_world_size())]
+            dist.all_gather(gathered_samples, wavs)  # gather not supported with NCCL
+            all_wavs.extend([sample.cpu() for sample in gathered_samples])
+            logger.log(f"created {len(all_wavs) * args.batch_size} samples")        
+
+
+    else:
+        while len(all_wavs) * args.batch_size < args.num_samples:
+            model_kwargs = {}
+            if args.class_cond:
+                classes = th.randint(
+                    low=0, high=NUM_CLASSES, size=(args.batch_size,), device=dist_util.dev()
+                )
+                model_kwargs["y"] = classes
+
+            wavs = sample_fn(
+                model,
+                # (args.batch_size, args.in_specs * 2, 32),
+                # (args.batch_size, args.in_specs, 8192 * 4),
+                (args.batch_size, args.in_specs, 8192),
+                clip_denoised=args.clip_denoised,
+                model_kwargs=model_kwargs,
+                progress=True
+            )
+
+            gathered_samples = [th.zeros_like(wavs) for _ in range(dist.get_world_size())]
+            dist.all_gather(gathered_samples, wavs)  # gather not supported with NCCL
+            all_wavs.extend([sample.cpu() for sample in gathered_samples])
+            logger.log(f"created {len(all_wavs) * args.batch_size} samples")
 
     arr = th.cat(all_wavs, dim=0)
     arr = arr[: args.num_samples]
@@ -96,10 +128,15 @@ def main():
 def create_argparser():
     defaults = dict(
         clip_denoised=True,
-        num_samples=10000,
-        batch_size=16,
+        num_samples=1,
+        batch_size=2,
         use_ddim=False,
-        model_path="",
+        use_ddrm=True,
+        model_path="model120000.pt",
+        sigma_0=0.05,
+        etaA=0.01,
+        etaB=0.01,
+        etaC=0.01
     )
     defaults.update(model_and_diffusion_defaults())
     defaults.update(audio_data_defaults())

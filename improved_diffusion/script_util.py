@@ -34,7 +34,7 @@ def model_and_diffusion_defaults():
         rescale_timesteps=True,
         rescale_learned_sigmas=True,
         use_checkpoint=False,
-        use_scale_shift_norm=True,
+        use_scale_shift_norm=True
     )
 
 

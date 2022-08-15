@@ -14,10 +14,43 @@ import torch as th
 import librosa
 import librosa.display
 import matplotlib.pyplot as plt
+import librosa
+from tqdm import tqdm
+from einops import rearrange
+
 
 from .nn import mean_flat
 from .losses import normal_kl, discretized_gaussian_log_likelihood
 
+hann_window = {}
+
+def spectrogram(y, n_fft=1024, hop_size=256, win_size=1024, center=False):
+    if th.min(y) < -1.:
+        print('min value is ', th.min(y))
+    if th.max(y) > 1.:
+        print('max value is ', th.max(y))
+
+    global hann_window
+    if str(y.device) not in hann_window:
+        hann_window[str(y.device)] = th.hann_window(win_size).to(y.device)
+
+    y = th.nn.functional.pad(y.unsqueeze(1), (int((n_fft-hop_size)/2), int((n_fft-hop_size)/2)), mode='reflect')
+    y = y.squeeze(1)
+
+    spec = th.stft(y, n_fft, hop_length=hop_size, win_length=win_size, window=hann_window[str(y.device)],
+                      center=center, pad_mode='reflect', normalized=False, onesided=True)
+
+    return spec
+
+
+def to_waveform(sample, n_fft, hop_size, win_size, center=True):
+    global hann_window
+    if str(sample.device) not in hann_window:
+        hann_window[str(sample.device)] = th.hann_window(win_size).to(sample.device)
+    sample = rearrange(sample, 'B (S D) T -> B S T D', D=2)
+    wave = th.istft(sample, n_fft, hop_length=hop_size, win_length=win_size, window=hann_window[str(sample.device)],
+                      center=center, normalized=False, onesided=True)
+    return wave.unsqueeze(1)
 
 def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
     """
@@ -329,7 +362,7 @@ class GaussianDiffusion:
             "pred_xstart": pred_xstart,
         }
 
-    def _predict_xstart_from_eps(self, x_t, t, eps):
+    def _predict_xstart_from_eps(self, x_t, t, eps): #eq 9
         assert x_t.shape == eps.shape
         return (
             _extract_into_tensor(self.sqrt_recip_alphas_cumprod, t, x_t.shape) * x_t
@@ -399,7 +432,7 @@ class GaussianDiffusion:
         denoised_fn=None,
         model_kwargs=None,
         device=None,
-        progress=False,
+        progress=False
     ):
         """
         Generate samples from the model.
@@ -491,6 +524,188 @@ class GaussianDiffusion:
                 #         plt.close()
                 # plt.imshow(img)
                 # plt.show()
+
+    def ddrm_sample(
+        self,
+        model,
+        shape,
+        noise=None,
+        model_kwargs=None,
+        device=None,
+        progress=False,
+        clear_signal = None,
+        sigma_0=0.01,
+        etaA=0.01,
+        etaB=0.01,
+        etaC=0.01
+    ):
+        """
+        Sample x_{t-1} from the model using DDRM
+        """
+        assert clear_signal is not None, "DDRM should be conditioned on clear signal"
+        sigma_y = sigma_0
+        sigma_y = 2 * sigma_y
+        indices = list(range(self.num_timesteps))
+        speca = librosa.feature.melspectrogram(y=clear_signal.cpu().numpy(), sr=16000, hop_length=256, win_length=1024, n_fft=1024, center=False)
+        
+        #speca = spectrogram(clear_signal)
+        # print(clear_signal.size())
+        plt.figure(figsize=(10, 10))
+        librosa.display.specshow(librosa.power_to_db(speca[0][0], ref=np.max), x_axis='time',
+                         y_axis='mel', sr=16000,
+                         fmax=8000)
+        plt.colorbar()
+        plt.savefig(f'speca_before.png')
+        plt.close()
+
+        speca = th.from_numpy(speca)
+        from .svd_replacement import Denoising
+        H_funcs = Denoising(1, speca.size(2), speca.size(3), 'cpu')
+        y0 = H_funcs.H(speca) 
+        y0 = y0 + sigma_y * th.randn_like(y0)
+
+        if noise is not None:
+            img = noise
+        else:
+            img = th.randn(*speca.size(), device=device)
+        denoised, pred_xstart = self.ddrm_sampling_loop(img, indices, model, self.betas, H_funcs, y0, sigma_y, etaA, etaB, etaC, model_kwargs)
+        
+        plt.figure(figsize=(10, 10))
+        librosa.display.specshow(librosa.power_to_db(denoised[0][0], ref=np.max), x_axis='time',
+                         y_axis='mel', sr=16000,
+                         fmax=8000)
+        plt.colorbar()
+        plt.savefig(f'speca_after.png')
+        plt.close()
+
+        denoised = th.from_numpy(librosa.feature.inverse.mel_to_audio(M=denoised.cpu().numpy(), sr=16000, hop_length=256, win_length=1024, n_fft=1024, center=False))
+        pred_xstart = th.from_numpy(librosa.feature.inverse.mel_to_audio(M=pred_xstart.cpu().numpy(), sr=16000, hop_length=256, win_length=1024, n_fft=1024, center=False))
+        out['sample'] = denoised
+        out['pred_xstart'] = pred_xstart
+
+        return out['sample']
+
+    def ddrm_sampling_loop(
+            self, 
+            x, 
+            seq, 
+            model,
+            betas,
+            H_funcs, 
+            y_0, 
+            sigma_0, 
+            etaB, 
+            etaA, 
+            etaC,
+            model_kwargs=None
+        ):
+        def compute_alpha(beta, t):
+            beta = th.cat([th.zeros(1).to(beta.device), beta], dim=0)
+            a = (1 - beta).cumprod(dim=0).index_select(0, t + 1).view(-1, 1, 1, 1)
+            return a
+
+        with th.no_grad():
+            #setup vectors used in the algorithm
+            #U, singulars, V_H = th.linalg.svd(H_funcs, full_matrices=False)
+            singulars = H_funcs.singulars()
+            Sigma = th.zeros(x.shape[1]*x.shape[2]*x.shape[3], device=x.device)
+            Sigma[:singulars.shape[0]] = singulars
+            U_t_y = H_funcs.Ut(y_0)
+            Sig_inv_U_t_y = U_t_y / singulars[:U_t_y.shape[-1]]
+
+            #initialize x_T as given in the paper
+            # skip = self.num_timesteps // self.args.timesteps
+            # seq = range(0, self.num_timesteps, skip)
+            largest_alphas = compute_alpha(th.from_numpy(betas), (th.ones(x.size(0)) * seq[-1]).to(x.device).long())
+            largest_sigmas = (1 - largest_alphas).sqrt() / largest_alphas.sqrt()
+            large_singulars_index = th.where(singulars * largest_sigmas[0, 0, 0, 0] > sigma_0)
+            inv_singulars_and_zero = th.zeros(x.shape[1] * x.shape[2] * x.shape[3]).to(singulars.device)
+            inv_singulars_and_zero[large_singulars_index] = sigma_0 / singulars[large_singulars_index]
+            inv_singulars_and_zero = inv_singulars_and_zero.view(1, -1)     
+
+            # implement p(x_T | x_0, y) as given in the paper
+            # if eigenvalue is too small, we just treat it as zero (only for init) 
+            init_y = th.zeros(x.shape[0], x.shape[1] * x.shape[2] * x.shape[3]).to(x.device)
+            init_y[:, large_singulars_index[0]] = U_t_y[:, large_singulars_index[0]] / singulars[large_singulars_index].view(1, -1)
+            init_y = init_y.view(*x.size())
+            remaining_s = largest_sigmas.view(-1, 1) ** 2 - inv_singulars_and_zero ** 2
+            remaining_s = remaining_s.view(x.shape[0], x.shape[1], x.shape[2], x.shape[3]).clamp_min(0.0).sqrt()
+            init_y = init_y + remaining_s * x
+            init_y = init_y / largest_sigmas
+            
+            #setup iteration variables
+            x = H_funcs.V(init_y.view(x.size(0), -1)).view(*x.size())
+            n = x.size(0)
+            seq_next = [-1] + list(seq[:-1])
+            x0_preds = []
+            xs = [x]
+
+            #iterate over the timesteps
+            for i, j in tqdm(zip(reversed(seq), reversed(seq_next))):
+                t = (th.ones(n) * i).to(x.device)
+                next_t = (th.ones(n) * j).to(x.device)
+                at = compute_alpha(th.from_numpy(betas), t.long())
+                at_next = compute_alpha(th.from_numpy(betas), next_t.long())
+                xt = xs[-1].to(x.device)
+                
+                # wav = librosa.istft(xt.cpu().numpy(),  hop_length=256, win_length=1024, n_fft=1024)
+                # wav = th.from_numpy(wav).to(x.device)
+                wav = th.from_numpy(librosa.feature.inverse.mel_to_audio(M=xt.cpu().numpy(), sr=16000, hop_length=256, win_length=1024, n_fft=1024, center=False))
+                # model = model.double()
+                et = model(wav, self._scale_timesteps(t).double(), **model_kwargs)
+                
+                if et.size(1) == 6:
+                    et = et[:, :3]
+                
+                et = th.from_numpy(librosa.feature.melspectrogram(y=et.cpu().numpy(), sr=16000, hop_length=256, win_length=1024, n_fft=1024, center=False))
+                x0_t = (xt - et * (1 - at).sqrt()) / at.sqrt()
+
+                #variational inference conditioned on y
+                sigma = (1 - at).sqrt()[0, 0, 0, 0] / at.sqrt()[0, 0, 0, 0]
+                sigma_next = (1 - at_next).sqrt()[0, 0, 0, 0] / at_next.sqrt()[0, 0, 0, 0]
+                xt_mod = xt / at.sqrt()[0, 0, 0, 0]
+                V_t_x = H_funcs.Vt(xt_mod)
+                SVt_x = (V_t_x * Sigma)[:, :U_t_y.shape[1]]
+                V_t_x0 = H_funcs.Vt(x0_t)
+                SVt_x0 = (V_t_x0 * Sigma)[:, :U_t_y.shape[1]]
+
+                falses = th.zeros(V_t_x0.shape[1] - singulars.shape[0], dtype=th.bool, device=xt.device)
+                cond_before_lite = singulars * sigma_next > sigma_0
+                cond_after_lite = singulars * sigma_next < sigma_0
+                cond_before = th.hstack((cond_before_lite, falses))
+                cond_after = th.hstack((cond_after_lite, falses))
+                
+
+                std_nextC = sigma_next * etaC
+                sigma_tilde_nextC = th.sqrt(sigma_next ** 2 - std_nextC ** 2)
+
+                std_nextA = sigma_next * etaA
+                sigma_tilde_nextA = th.sqrt(sigma_next**2 - std_nextA**2)
+                
+                diff_sigma_t_nextB = th.sqrt(sigma_next ** 2 - sigma_0 ** 2 / singulars[cond_before_lite] ** 2 * (etaB ** 2))
+
+                #missing pixels
+                Vt_xt_mod_next = V_t_x0 + sigma_tilde_nextC * H_funcs.Vt(et) + std_nextC * th.randn_like(V_t_x0)
+
+                #less noisy than y (after)
+                Vt_xt_mod_next[:, cond_after] = \
+                    V_t_x0[:, cond_after] + sigma_tilde_nextA * ((U_t_y - SVt_x0) / sigma_0)[:, cond_after_lite] + std_nextA * th.randn_like(V_t_x0[:, cond_after])
+                
+                #noisier than y (before)
+                Vt_xt_mod_next[:, cond_before] = \
+                    (Sig_inv_U_t_y[:, cond_before_lite] * etaB + (1 - etaB) * V_t_x0[:, cond_before] + diff_sigma_t_nextB * th.randn_like(U_t_y)[:, cond_before_lite])
+
+                #aggregate all 3 cases and give next prediction
+                xt_mod_next = H_funcs.V(Vt_xt_mod_next) #V@V^T@x
+                xt_next = (at_next.sqrt()[0, 0, 0, 0] * xt_mod_next).view(*x.shape)
+
+                x0_preds.append(x0_t.to('cpu'))
+                xs.append(xt_next.to('cpu'))
+
+
+        return xs, x0_preds
+
+
 
     def ddim_sample(
         self,
@@ -855,3 +1070,7 @@ def _extract_into_tensor(arr, timesteps, broadcast_shape):
     while len(res.shape) < len(broadcast_shape):
         res = res[..., None]
     return res.expand(broadcast_shape)
+
+
+
+

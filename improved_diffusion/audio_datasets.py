@@ -11,7 +11,7 @@ def audio_data_defaults():
     Defaults for audio training.
     """
     return dict(
-        root='../data/DR_VCTK/',
+        root='data/',
         segment_size=8192,
         # num_mels=80,
         # "num_freq": 1025,
@@ -24,7 +24,7 @@ def audio_data_defaults():
 
 
 def load_data(
-    batch_size, *args, deterministic=False, **kwargs
+    batch_size, subset = 'train', *args, deterministic=False, **kwargs
 ):
     """
     For a dataset, create a generator over (mels, kwargs) pairs.
@@ -34,7 +34,7 @@ def load_data(
     :param deterministic: if True, yield results in a deterministic order.
     """
 
-    dataset = VCTK(*args, subset='train', **kwargs)
+    dataset = VCTK(*args, subset=subset, **kwargs)
 
     if deterministic:
         loader = DataLoader(
