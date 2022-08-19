@@ -1,0 +1,16 @@
+.DS_Store
+__pycache__/
+*.ipynb*
+data/
+progress.csv
+*.txt*
+*.wav*
+*.png*
+*.pt*
+.git/
+improved_diffusion.egg-info/
+*.zip*
+logs_new
+logs_test
+wavs_olegs_model/
+

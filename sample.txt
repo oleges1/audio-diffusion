@@ -1,0 +1,1 @@
+python3 -m torch.distributed.launch --master_port 12346 --nproc_per_node=3  scripts/wav_sample.py --batch_size 16 --model_path log_test/model520000.pt --num_samples 10 --num_gpus 3

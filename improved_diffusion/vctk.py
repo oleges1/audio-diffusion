@@ -4,7 +4,6 @@ import torchaudio
 import random
 from torchaudio import datasets
 import torchaudio.functional as AF
-from librosa.filters import mel as librosa_mel_fn
 from einops import rearrange
 
 hann_window = {}
@@ -28,6 +27,10 @@ def spectrogram(y, n_fft, hop_size, win_size, center=False):
     return spec
 
 class DRVCTK(datasets.DR_VCTK):
+    """
+    Device-recordered VCTK
+    """
+
     def __init__(
             self, root, segment_size, n_fft, 
             hop_size, win_size, raw_wave,
@@ -73,6 +76,10 @@ class DRVCTK(datasets.DR_VCTK):
     
 
 class VCTK(datasets.VCTK_092):
+    """
+    VCTK.092
+    """
+
     def __init__(
             self, root, segment_size, n_fft, 
             hop_size, win_size, raw_wave,
@@ -113,3 +120,4 @@ class VCTK(datasets.VCTK_092):
 
         speca = rearrange(speca, 'B S T D -> B (S D) T')
         return speca.squeeze(0), {}
+
