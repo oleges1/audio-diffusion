@@ -1,10 +1,12 @@
 from PIL import Image
 import blobfile as bf
-from mpi4py import MPI
+
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
 from .vctk import DRVCTK
+
+import torchvision.transforms as T
 
 def audio_data_defaults():
     """
@@ -18,7 +20,7 @@ def audio_data_defaults():
         n_fft=1024,
         hop_size=256,
         win_size=1024,
-        raw_wave=True,
+        raw_wave=False,
         # sampling_rate=16000
     )
 
@@ -34,9 +36,8 @@ def load_data(
     :param deterministic: if True, yield results in a deterministic order.
     """
 
-
-    dataset = DRVCTK(*args, **kwargs) #DRVCTK(*args, subset='train', **kwargs)
-
+    transform = T.Resize((1024, 32))
+    dataset = DRVCTK(*args, subset=subset, transform = transform, **kwargs)
 
     if deterministic:
         loader = DataLoader(

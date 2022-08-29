@@ -14,7 +14,7 @@ import numpy as np
 import torch as th
 import torch.distributed as dist
 
-from improved_diffusion import dist_util, logger
+from improved_diffusion import logger
 from improved_diffusion.script_util import (
     NUM_CLASSES,
     model_and_diffusion_defaults,
@@ -52,6 +52,7 @@ def main():
         raise
     #dist_util.setup_dist()
 
+
     logger.configure()
 
     logger.log("creating model and diffusion...")
@@ -73,6 +74,7 @@ def main():
     #model.to(dist_util.dev())
     model = DDP(model)
 
+
     model.eval()
 
     logger.log("sampling...")
@@ -92,6 +94,7 @@ def main():
             if len(all_wavs) * args.batch_size > args.num_samples:
                 break
             model_kwargs = {}
+            batch.cuda()
             wavs = sample_fn(model,
                 (args.batch_size, args.in_specs, 8192),
                 progress=True,
@@ -101,7 +104,8 @@ def main():
                 etaA=args.etaA,
                 etaB=args.etaB,
                 etaC=args.etaC,
-                model_kwargs=model_kwargs
+                model_kwargs=model_kwargs,
+                trained_on = 'wav'
             )
 
             gathered_samples = [th.zeros_like(wavs) for _ in range(dist.get_world_size())]
@@ -113,11 +117,13 @@ def main():
     else:
         while len(all_wavs) * args.batch_size < args.num_samples:
             model_kwargs = {}
+
             if args.class_cond:
                 classes = th.randint(
                     low=0, high=NUM_CLASSES, size=(args.batch_size,), device=dist_util.dev()
                 )
                 model_kwargs["y"] = classes
+
 
             wavs = sample_fn(
                 model,
@@ -156,15 +162,15 @@ def main():
 def create_argparser():
     defaults = dict(
         clip_denoised=True,
-        num_samples=10000,
-        batch_size=16,
-        model_path="",
+        num_samples=1,
+        batch_size=2,
         use_ddim=False,
-        use_ddrm=False,
-        sigma_0=0.05,
-        etaA=0.01,
-        etaB=0.01,
-        etaC=0.01
+        use_ddrm=True,
+        model_path="logs/model790000.pt",
+        sigma_0=0.00000001,
+        etaA=0.85,
+        etaB=0.85,
+        etaC=0.85
     )
     defaults.update(model_and_diffusion_defaults())
     defaults.update(audio_data_defaults())

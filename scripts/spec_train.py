@@ -9,6 +9,10 @@ import os
 sys.path.append('.')
 
 from improved_diffusion import logger
+<<<<<<< HEAD
+=======
+
+>>>>>>> 26fc42433c2409fae8dbe96c9b87feab8140430e
 from improved_diffusion.audio_datasets import load_data
 from improved_diffusion.resample import create_named_schedule_sampler
 from improved_diffusion.script_util import (
@@ -59,6 +63,10 @@ def main():
     )
     #model.to(dist_util.dev())
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 26fc42433c2409fae8dbe96c9b87feab8140430e
     schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion)
 
     logger.log("creating data loader...")
@@ -84,7 +92,12 @@ def main():
         schedule_sampler=schedule_sampler,
         weight_decay=args.weight_decay,
         lr_anneal_steps=args.lr_anneal_steps,
+<<<<<<< HEAD
         num_gpus=args.num_gpus
+=======
+        num_gpus=args.num_gpus,
+        experiment_name = args.experiment_name
+>>>>>>> 26fc42433c2409fae8dbe96c9b87feab8140430e
     ).run_loop()
 
 
@@ -108,8 +121,13 @@ def create_argparser():
     parser = argparse.ArgumentParser()
     add_dict_to_argparser(parser, defaults)
     parser.add_argument('--local_rank', type=int)
+<<<<<<< HEAD
     parser.add_argument('--num_gpus', default=0, type=int)
 
+=======
+    parser.add_argument('--num_gpus', default=1, type=int)
+    parser.add_argument('--experiment_name', type=str)
+>>>>>>> 26fc42433c2409fae8dbe96c9b87feab8140430e
     return parser
 
 

@@ -1,4 +1,7 @@
+
+from ctypes import sizeof
 import torch
+import numpy as np
 
 class H_functions:
     """
@@ -84,7 +87,10 @@ class GeneralH(H_functions):
 
         ZERO = 1e-3
         self._singulars[self._singulars < ZERO] = 0
+<<<<<<< HEAD
         print(len([x.item() for x in self._singulars if x == 0]))
+=======
+>>>>>>> 26fc42433c2409fae8dbe96c9b87feab8140430e
 
     def V(self, vec):
         return self.mat_by_vec(self._V, vec.clone())
@@ -108,13 +114,14 @@ class GeneralH(H_functions):
 
 #Inpainting
 class Inpainting(H_functions):
-    def __init__(self, channels, img_dim, missing_indices, device):
+    def __init__(self, channels, img_dim1, img_dim2, missing_indices, device):
         self.channels = channels
-        self.img_dim = img_dim
-        self._singulars = torch.ones(channels * img_dim**2 - missing_indices.shape[0]).to(device)
+        self.img_dim1 = img_dim1
+        self.img_dim2 = img_dim2
+        self._singulars = torch.ones(channels * img_dim1 * img_dim2 - missing_indices.shape[0]).to(device)
         self.missing_indices = missing_indices
-        self.kept_indices = torch.Tensor([i for i in range(channels * img_dim**2) if i not in missing_indices]).to(device).long()
-
+        self.kept_indices = torch.Tensor([i for i in range(channels * img_dim1 * img_dim2) if i not in missing_indices]).to(device).long()
+        
     def V(self, vec):
         temp = vec.clone().reshape(vec.shape[0], -1)
         out = torch.zeros_like(temp)
@@ -139,7 +146,8 @@ class Inpainting(H_functions):
         return self._singulars
 
     def add_zeros(self, vec):
-        temp = torch.zeros((vec.shape[0], self.channels * self.img_dim**2), device=vec.device)
+
+        temp = torch.zeros((vec.shape[0], self.channels * self.img_dim1 * self.img_dim2), device=vec.device)
         reshaped = vec.clone().reshape(vec.shape[0], -1)
         temp[:, :reshaped.shape[1]] = reshaped
         return temp
@@ -147,7 +155,7 @@ class Inpainting(H_functions):
 #Denoising
 class Denoising(H_functions):
     def __init__(self, channels, img_dim1, img_dim2, device):
-        self._singulars = torch.ones(channels * min(img_dim1, img_dim2)**2, device=device)
+        self._singulars = torch.ones(channels * img_dim1 * img_dim2, device=device)
 
     def V(self, vec):
         return vec.clone().reshape(vec.shape[0], -1)

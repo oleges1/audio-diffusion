@@ -20,9 +20,9 @@ def model_and_diffusion_defaults():
         num_heads_upsample=-1,
         attention_resolutions="16,8",
         dropout=0.0,
-        # in_specs=2*513,
+        #in_specs=2*513,
         in_specs=1,
-        dim=1,
+        dim=2,
         learn_sigma=False,
         sigma_small=False,
         class_cond=False,
@@ -34,8 +34,7 @@ def model_and_diffusion_defaults():
         rescale_timesteps=True,
         rescale_learned_sigmas=True,
         use_checkpoint=False,
-        use_scale_shift_norm=True,
-
+        use_scale_shift_norm=True
     )
 
 
@@ -305,3 +304,4 @@ def str2bool(v):
         return False
     else:
         raise argparse.ArgumentTypeError("boolean value expected")
+

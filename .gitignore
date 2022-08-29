@@ -1,6 +1,7 @@
 .DS_Store
 __pycache__/
 *.ipynb*
+<<<<<<< HEAD
 data/
 progress.csv
 *.txt*
@@ -14,3 +15,14 @@ logs_new
 logs_test
 wavs_olegs_model/
 
+=======
+*.txt*
+data/
+*.png*
+*.pt*
+*.wav*
+.git/
+.ipynb_checkpoints/
+improved_diffusion.egg-info/
+logs/
+>>>>>>> 26fc42433c2409fae8dbe96c9b87feab8140430e

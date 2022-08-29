@@ -8,6 +8,9 @@ import torch as th
 import torch.distributed as dist
 from torch.nn.parallel.distributed import DistributedDataParallel as DDP
 import ssl
+from pathlib import Path
+
+
 from torch.optim import AdamW
 
 from . import dist_util, logger
@@ -20,6 +23,7 @@ from .fp16_util import (
 )
 from .nn import update_ema
 from .resample import LossAwareSampler, UniformSampler
+import time
 
 # For ImageNet experiments, this was a good default value.
 # We found that the lg_loss_scale quickly climbed to
@@ -42,7 +46,7 @@ class TrainLoop:
         save_interval,
         resume_checkpoint,
         num_gpus,
-
+        experiment_name,
         use_fp16=False,
         fp16_scale_growth=1e-3,
         schedule_sampler=None,
@@ -80,6 +84,10 @@ class TrainLoop:
         
         self.device= 'cuda' if self.num_gpus > 0 else 'cpu'
         
+        self.experiment_name = experiment_name
+        Path(self.experiment_name).mkdir(parents=True, exist_ok=True)
+
+        
         ssl._create_default_https_context = ssl._create_unverified_context
         th.manual_seed(0)
 
@@ -88,9 +96,11 @@ class TrainLoop:
             th.backends.cudnn.benchmark = True
             th.cuda.manual_seed_all(0)
 
+
         if self.num_gpus <= 1:
             self.rank = 0
         elif self.num_gpus > 1 and self.num_gpus <= 8:
+
             th.distributed.init_process_group(backend='nccl', init_method='env://')
             self.rank = th.distributed.get_rank()
             th.cuda.set_device(self.rank)
@@ -107,6 +117,7 @@ class TrainLoop:
             self._setup_fp16()
         
 
+
         self.opt = AdamW(self.master_params, lr=self.lr, weight_decay=self.weight_decay)
         if self.resume_step:
             self._load_optimizer_state()
@@ -121,6 +132,7 @@ class TrainLoop:
             ]
 
 
+
         if self.num_gpus > 1:
             self.use_ddp = True
             self.ddp_model = DDP(
@@ -132,7 +144,7 @@ class TrainLoop:
                 # find_unused_parameters=False,
             )
         else:
-	    print('No CUDA used')
+            print('No CUDA used')
             #if dist.get_world_size() > 1:
             #    logger.warn(
             #        "Distributed training requires CUDA. "
@@ -151,6 +163,7 @@ class TrainLoop:
                 logger.log(f"loading model from checkpoint: {resume_checkpoint}...")
             self.model.load_state_dict(th.load(resume_checkpoint, map_location='cpu'), strict=False)
 
+
         dist_util.sync_params(self.model.parameters())
 
     def _load_ema_parameters(self, rate):
@@ -167,6 +180,7 @@ class TrainLoop:
                 param.to(self.device)
         #dist_util.sync_params(ema_params)
 
+
         return ema_params
 
     def _load_optimizer_state(self):
@@ -179,6 +193,7 @@ class TrainLoop:
                 logger.log(f"loading optimizer state from checkpoint: {opt_checkpoint}")
             state_dict = th.load(opt_checkpoint, map_location='cpu')
 
+
             self.opt.load_state_dict(state_dict)
 
     def _setup_fp16(self):
@@ -190,6 +205,7 @@ class TrainLoop:
             not self.lr_anneal_steps
             or self.step + self.resume_step < self.lr_anneal_steps
         ):
+
             batch, cond = next(self.data)
             self.run_step(batch, cond)
             if self.step % self.log_interval == 0:
@@ -199,7 +215,10 @@ class TrainLoop:
                 # Run for a finite amount of time in integration tests.
                 if os.environ.get("DIFFUSION_TRAINING_TEST", "") and self.step > 0:
                     return
+                
+           # print(f'Step {self.step} time {time.time() - time1}')
             self.step += 1
+            
         # Save the last checkpoint if it wasn't already saved.
         if (self.step - 1) % self.save_interval != 0:
             self.save()
@@ -222,6 +241,7 @@ class TrainLoop:
             }
             last_batch = (i + self.microbatch) >= batch.shape[0]
             t, weights = self.schedule_sampler.sample(micro.shape[0], self.device)
+
 
 
             compute_losses = functools.partial(
@@ -294,6 +314,7 @@ class TrainLoop:
         logger.logkv("step", self.step + self.resume_step)
         logger.logkv("samples", (self.step + self.resume_step + 1) * self.batch_size)
 
+
         if self.use_fp16:
             logger.logkv("lg_loss_scale", self.lg_loss_scale)
 
@@ -303,10 +324,12 @@ class TrainLoop:
             if self.rank == 0:
                 logger.log(f"saving model {rate}...")
                 if not rate:
-                    filename = f"log_test/model{(self.step+self.resume_step):06d}.pt"
+
+                    filename = f"{self.experiment_name}/model{(self.step+self.resume_step):06d}.pt"
                 else:
-                    filename = f"log_test/ema_{rate}_{(self.step+self.resume_step):06d}.pt"
+                    filename = f"{self.experiment_name}/ema_{rate}_{(self.step+self.resume_step):06d}.pt"
                 th.save(state_dict, filename)
+
 
 
         save_checkpoint(0, self.master_params)
@@ -314,7 +337,8 @@ class TrainLoop:
             save_checkpoint(rate, params)
 
         if self.rank == 0:
-            filename = f"log_test/opt{(self.step+self.resume_step):06d}.pt"
+
+            filename = f"{self.experiment_name}/opt{(self.step+self.resume_step):06d}.pt"
             th.save(self.opt.state_dict(), filename)
 
         dist.barrier()
