@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
 from .vctk import DRVCTK
-
+from torch.utils.data.distributed import DistributedSampler
 import torchvision.transforms as T
 
 def audio_data_defaults():
@@ -26,7 +26,7 @@ def audio_data_defaults():
 
 
 def load_data(
-    batch_size, subset = 'train', *args, deterministic=False, **kwargs
+    batch_size, subset = 'train', *args, deterministic=False, use_ddp = False, **kwargs
 ):
     """
     For a dataset, create a generator over (mels, kwargs) pairs.
@@ -37,15 +37,20 @@ def load_data(
     """
 
     transform = T.Resize((1024, 32))
+    
     dataset = DRVCTK(*args, subset=subset, transform = transform, **kwargs)
-
+    sampler=None
     if deterministic:
+        if use_ddp:
+            sampler =  DistributedSampler(dataset, shuffle=False)
         loader = DataLoader(
-            dataset, batch_size=batch_size, shuffle=False, num_workers=1, drop_last=True
+            dataset, batch_size=batch_size, num_workers=1, drop_last=True, sampler=sampler
         )
     else:
+        if use_ddp:
+            sampler =  DistributedSampler(dataset, shuffle=True)
         loader = DataLoader(
-            dataset, batch_size=batch_size, shuffle=True, num_workers=1, drop_last=True
+            dataset, batch_size=batch_size, num_workers=1, drop_last=True, sampler=sampler
         )
     while True:
         yield from loader

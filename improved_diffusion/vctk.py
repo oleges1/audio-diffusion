@@ -5,7 +5,6 @@ import random
 from torchaudio import datasets
 import torchaudio.functional as AF
 
-from librosa.filters import mel as librosa_mel_fn
 from einops import rearrange
 
 hann_window = {}
@@ -82,7 +81,7 @@ class VCTK(datasets.VCTK_092):
     def __init__(
             self, root, segment_size, n_fft, 
             hop_size, win_size, raw_wave,
-             zero_out_percent=None
+             zero_out_percent=None, transform=None
         ):
         super().__init__(root, download=False)
         self.segment_size = segment_size
@@ -91,7 +90,7 @@ class VCTK(datasets.VCTK_092):
         self.win_size = win_size
         self.zero_out_percent = zero_out_percent
         self.raw_wave = raw_wave
-
+        self.transform = transform
 
     def __getitem__(self, i):
         
@@ -119,4 +118,4 @@ class VCTK(datasets.VCTK_092):
 
         speca = rearrange(speca, 'B S T D -> B (S D) T')
 
-        return speca, {}
+        return self.transform(speca), {}

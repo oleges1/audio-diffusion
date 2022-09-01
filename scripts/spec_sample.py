@@ -13,6 +13,9 @@ sys.path.append('.')
 import numpy as np
 import torch as th
 import torch.distributed as dist
+from torch.nn.functional import interpolate
+
+
 
 from improved_diffusion import  logger
 from improved_diffusion.script_util import (
@@ -26,6 +29,9 @@ from improved_diffusion.audio_datasets import audio_data_defaults
 from einops import rearrange
 from improved_diffusion.audio_datasets import load_data
 import torchaudio
+import matplotlib.pyplot as plt
+import librosa
+import librosa.display 
 
 hann_window = {}
 
@@ -71,6 +77,7 @@ def main():
         data = load_data(batch_size=args.batch_size, subset='test', **args_to_dict(args, audio_data_defaults().keys()), deterministic=True)
         for batch, cond in data:
             print('Using DDRM sampling')
+            print('batch size', batch.size())
             if len(all_wavs) * args.batch_size > args.num_samples:
                 break
             model_kwargs = {}
@@ -109,13 +116,22 @@ def main():
             sample = sample_fn(
                 model,
                 # (args.batch_size, args.in_specs * 2, 32),
-                (args.batch_size, args.in_specs, 32),
+                (args.batch_size, args.in_specs, 1024, 32),
                 clip_denoised=args.clip_denoised,
                 model_kwargs=model_kwargs,
                 progress=True
             )
-            print(sample.shape, "sample, should be only one batch dimension")
-            wavs = to_waveform(sample, args.n_fft, args.hop_size, args.win_size).contiguous()
+            print(sample.shape, "sample, should be three dimensions")
+            
+            plt.figure(figsize=(10, 10))
+            librosa.display.specshow(librosa.power_to_db(sample[0][0].cpu(), ref=np.max), x_axis='time',
+                            y_axis='mel', sr=16000,
+                            fmax=8000)
+            plt.colorbar()
+            plt.savefig('speca_sample.png')
+            plt.close()
+            
+            wavs = to_waveform(interpolate(sample[:, 0, :, :], (1026, 32)), args.n_fft, args.hop_size, args.win_size).contiguous()
             print(wavs.shape, "wavs, should be only one batch dimension")
 
             gathered_samples = [th.zeros_like(wavs) for _ in range(dist.get_world_size())]
@@ -148,8 +164,8 @@ def create_argparser():
         num_samples=1,
         batch_size=2,
         use_ddim=False,
-        use_ddrm=True,
-        model_path="logs/model1100000.pt",
+        use_ddrm=False,
+        model_path="speca_corrected_b01_noise_continue/model340000.pt",
         sigma_0=0.00000001,
         etaA=0.85,
         etaB=0.85,
