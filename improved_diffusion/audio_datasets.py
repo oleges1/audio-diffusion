@@ -1,6 +1,5 @@
 from PIL import Image
 import blobfile as bf
-from mpi4py import MPI
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
@@ -11,7 +10,7 @@ def audio_data_defaults():
     Defaults for audio training.
     """
     return dict(
-        root='../data/DR_VCTK/',
+        root='data/VCTK',
         segment_size=8192,
         # num_mels=80,
         # "num_freq": 1025,

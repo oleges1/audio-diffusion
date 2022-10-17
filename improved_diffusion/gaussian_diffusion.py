@@ -11,8 +11,6 @@ import math
 import numpy as np
 import torch as th
 
-import librosa
-import librosa.display
 import matplotlib.pyplot as plt
 
 from .nn import mean_flat

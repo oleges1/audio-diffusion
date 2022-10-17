@@ -245,8 +245,8 @@ class TrainLoop:
         self._log_grad_norm()
         self._anneal_lr()
         self.opt.step()
-        for rate, params in zip(self.ema_rate, self.ema_params):
-            update_ema(params, self.master_params, rate=rate)
+        # for rate, params in zip(self.ema_rate, self.ema_params):
+        #     update_ema(params, self.master_params, rate=rate)
 
     def _log_grad_norm(self):
         sqsum = 0.0
