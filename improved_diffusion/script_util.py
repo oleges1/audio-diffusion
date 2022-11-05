@@ -15,14 +15,14 @@ def model_and_diffusion_defaults():
     return dict(
         image_size=64,
         num_channels=128,
-        num_res_blocks=2,
+        num_res_blocks=4,
         num_heads=4,
         num_heads_upsample=-1,
         attention_resolutions="16,8",
         dropout=0.0,
         #in_specs=2*513,
         in_specs=1,
-        dim=2,
+        dim=1,
         learn_sigma=False,
         sigma_small=False,
         class_cond=False,
@@ -304,4 +304,3 @@ def str2bool(v):
         return False
     else:
         raise argparse.ArgumentTypeError("boolean value expected")
-

@@ -22,11 +22,13 @@ from improved_diffusion.script_util import (
     add_dict_to_argparser,
     args_to_dict,
 )
-from torch.nn.parallel.distributed import DistributedDataParallel as DDP
 from improved_diffusion.audio_datasets import audio_data_defaults
 from improved_diffusion.audio_datasets import load_data
 from einops import rearrange
 import torchaudio
+
+import matplotlib.pyplot as plt
+plt.rcParams.update({'font.size': 20})
 
 hann_window = {}
 
@@ -35,46 +37,18 @@ save_path = 'wavs/'
 def main():
     args = create_argparser().parse_args()
     
-    if args.num_gpus > 0:
-            th.backends.cudnn.enabled = True
-            th.backends.cudnn.benchmark = True
-            th.cuda.manual_seed_all(0)
-            
-    if args.num_gpus <= 1:
-            rank = 0
-
-    elif args.num_gpus > 1 and args.num_gpus <= 8:
-        th.distributed.init_process_group(backend='nccl', init_method='env://')
-        rank = th.distributed.get_rank()
-        th.cuda.set_device(rank)
-
-    elif args.num_gpus > 8:
-        raise
     #dist_util.setup_dist()
-
-
     logger.configure()
 
     logger.log("creating model and diffusion...")
     model, diffusion = create_model_and_diffusion(
         **args_to_dict(args, model_and_diffusion_defaults().keys())
     )
+    model.load_state_dict(
+        th.load(args.model_path, map_location="cpu")
+    )
+    model.cuda()
     
-    if args.num_gpus > 0:
-        model.cuda()
-    
-   
-    if rank == 0:
-        print(f'Loading model from {args.model_path}')
-    model_dict = th.load(args.model_path, map_location='cpu')
-    model.load_state_dict(model_dict, strict=False)
-    # model.load_state_dict(
-    #     dist_util.load_state_dict(args.model_path, map_location="cpu")
-    # )
-    #model.to(dist_util.dev())
-    model = DDP(model)
-
-
     model.eval()
 
     logger.log("sampling...")
@@ -88,42 +62,87 @@ def main():
         sample_fn = diffusion.p_sample_loop 
 
     if args.use_ddrm:
+
+        print('Using DDRM sampling')
+        segment_size=8192
         data = load_data(batch_size=args.batch_size, subset='test', **args_to_dict(args, audio_data_defaults().keys()), deterministic=True)
-        for batch, cond in data:
-            print('Using DDRM sampling')
-            if len(all_wavs) * args.batch_size > args.num_samples:
-                break
+        
+        batch, _ = next(data)
+        batch, _ = next(data)
+
+        if True:
+            # if len(all_wavs) * args.batch_size > args.num_samples:
+            #     break
             model_kwargs = {}
             batch.cuda()
-            wavs = sample_fn(model,
-                (args.batch_size, args.in_specs, 8192),
-                progress=True,
-                device='cpu',
-                clear_signal=batch,
-                sigma_0=args.sigma_0,
-                etaA=args.etaA,
-                etaB=args.etaB,
-                etaC=args.etaC,
-                model_kwargs=model_kwargs,
-                trained_on = 'wav'
-            )
 
-            gathered_samples = [th.zeros_like(wavs) for _ in range(dist.get_world_size())]
-            dist.all_gather(gathered_samples, wavs)  # gather not supported with NCCL
-            all_wavs.extend([sample.cpu() for sample in gathered_samples])
-            logger.log(f"created {len(all_wavs) * args.batch_size} samples")        
+            start = 0
+            end = segment_size
+            audio_denoised = []
+            audio_noisy = []
+            torchaudio.save('initial_wav.wav', batch[0].cpu(), 16000)
+            print('batch', batch.size())
+
+            while start < batch.size(2):
+                if end > batch.size(2):
+                    print('last batch', batch[:, :, start:].size())
+                    subset = th.nn.functional.pad(batch[:, :, start:], (0, segment_size - batch[:, :, start:].size(-1)), 'constant')
+                else:
+                    subset = batch[:, :, start:end]
+                    out_denoised, out_noisy = sample_fn(model,
+                    (args.batch_size, args.in_specs, segment_size),
+                    progress=True,
+                    device='cpu',
+                    clear_signal=subset,
+                    sigma_0=args.sigma_0,
+                    etaA=args.etaA,
+                    etaB=args.etaB,
+                    etaC=args.etaC,
+                    model_kwargs=model_kwargs,
+                    trained_on = 'wav'
+                )
+                print('noisy2', out_noisy.size())
+                print('den', out_denoised.size())
+                audio_denoised.append(out_denoised.squeeze(-1).transpose(1, 2))
+                audio_noisy.append(out_noisy)
+                start += segment_size
+                end += segment_size
+
+            final_noisy = th.cat(audio_noisy, dim=1)
+            print('noisy', final_noisy.size())
+            torchaudio.save('degraded_wav.wav', final_noisy[0].transpose(0, 1).cpu(), 16000)
+            final_sample = th.cat(audio_denoised, dim=1)
+            final_sample = final_sample[:, :batch.size(-1), :]
+            print(final_sample.size(), 'final size')
+            torchaudio.save('restored_wav.wav', final_sample[0].transpose(0, 1).cpu(), 16000)
+
+            fig, axs = plt.subplots(3, 1,  figsize=(40, 40))
+            values, ybins, xbins, im1 = axs[0].specgram(batch[0][0].cpu().numpy(), Fs=16000,  NFFT = 1024)
+            axs[0].set_title('Initial spectrogram')
+            values, ybins, xbins, im2 = axs[1].specgram(final_noisy.squeeze(-1)[0].cpu().numpy(), Fs=16000, NFFT = 1024)
+            axs[1].set_title('Degraded spectrogram')
+            values, ybins, xbins, im3 = axs[2].specgram(final_sample[0].transpose(0, 1)[0].cpu().numpy(), Fs=16000,  NFFT = 1024)
+            axs[2].set_title('Restored spectrogram')
+            fig.colorbar(im1, ax=axs[0])
+            fig.colorbar(im2, ax=axs[1])
+            fig.colorbar(im3, ax=axs[2])
+            plt.savefig(f'speca_result_model_wav.png')
+            plt.close()
+            # # break
+            # gathered_samples = [th.zeros_like(wavs) for _ in range(dist.get_world_size())]
+            # dist.all_gather(gathered_samples, wavs)  # gather not supported with NCCL
+            # all_wavs.extend([sample.cpu() for sample in gathered_samples])
+            # logger.log(f"created {len(all_wavs) * args.batch_size} samples")        
 
 
     else:
         while len(all_wavs) * args.batch_size < args.num_samples:
             model_kwargs = {}
-
-            if args.class_cond:
-                classes = th.randint(
-                    low=0, high=NUM_CLASSES, size=(args.batch_size,), device=dist_util.dev()
-                )
-                model_kwargs["y"] = classes
-
+            # if args.class_cond:
+            #     classes = th.randint(
+            #         low=0, high=NUM_CLASSES, size=(args.batch_size,), device=dist_util.dev()
+            #     )
+            #     model_kwargs["y"] = classes
 
             wavs = sample_fn(
                 model,
@@ -163,10 +182,10 @@ def create_argparser():
     defaults = dict(
         clip_denoised=True,
         num_samples=1,
-        batch_size=2,
+        batch_size=1,
         use_ddim=False,
-        use_ddrm=True,
-        model_path="logs/model790000.pt",
+        use_ddrm=False,
+        model_path="logs/model1530000.pt",
         sigma_0=0.00000001,
         etaA=0.85,
         etaB=0.85,
@@ -176,9 +195,7 @@ def create_argparser():
     defaults.update(audio_data_defaults())
     parser = argparse.ArgumentParser()
     add_dict_to_argparser(parser, defaults)
-    parser.add_argument('--local_rank', type=int)
-    parser.add_argument('--num_gpus', default=0, type=int)
-
+    
     return parser
 
 

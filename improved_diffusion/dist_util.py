@@ -7,7 +7,7 @@ import os
 import socket
 
 import blobfile as bf
-#from mpi4py import MPI
+# from mpi4py import MPI
 import torch as th
 import torch.distributed as dist
 
@@ -42,13 +42,13 @@ SETUP_RETRY_COUNT = 3
 #     dist.init_process_group(backend=backend, init_method="env://")
 
 
-# def dev():
-#     """
-#     Get the device to use for torch.distributed.
-#     """
-#     if th.cuda.is_available():
-#         return th.device(f"cuda:{MPI.COMM_WORLD.Get_rank() % GPUS_PER_NODE}")
-#     return th.device("cpu")
+def dev():
+    """
+    Get the device to use for torch.distributed.
+    """
+    if th.cuda.is_available():
+        return th.device(f"cuda:{dist.get_rank() % GPUS_PER_NODE}")
+    return th.device("cpu")
 
 
 # def load_state_dict(path, **kwargs):

@@ -1,12 +1,11 @@
 from PIL import Image
-import blobfile as bf
-
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
 from .vctk import DRVCTK
-from torch.utils.data.distributed import DistributedSampler
 import torchvision.transforms as T
+from torch.utils.data.distributed import DistributedSampler
+
 
 def audio_data_defaults():
     """
@@ -20,13 +19,13 @@ def audio_data_defaults():
         n_fft=1024,
         hop_size=256,
         win_size=1024,
-        raw_wave=False,
+        raw_wave=True,
         # sampling_rate=16000
     )
 
 
 def load_data(
-    batch_size, subset = 'train', *args, deterministic=False, use_ddp = False, **kwargs
+    batch_size, subset = 'train', *args, deterministic=False, **kwargs
 ):
     """
     For a dataset, create a generator over (mels, kwargs) pairs.
@@ -35,22 +34,18 @@ def load_data(
     :param batch_size: the batch size of each returned pair.
     :param deterministic: if True, yield results in a deterministic order.
     """
-
     transform = T.Resize((1024, 32))
-    
     dataset = DRVCTK(*args, subset=subset, transform = transform, **kwargs)
-    sampler=None
+
     if deterministic:
-        if use_ddp:
-            sampler =  DistributedSampler(dataset, shuffle=False)
+        sampler = DistributedSampler(dataset=dataset, shuffle=False)
         loader = DataLoader(
-            dataset, batch_size=batch_size, num_workers=1, drop_last=True, sampler=sampler
+            dataset, batch_size=batch_size, sampler=sampler, num_workers=1, drop_last=True
         )
     else:
-        if use_ddp:
-            sampler =  DistributedSampler(dataset, shuffle=True)
+        sampler = DistributedSampler(dataset=dataset, shuffle=True)
         loader = DataLoader(
-            dataset, batch_size=batch_size, num_workers=1, drop_last=True, sampler=sampler
+            dataset, batch_size=batch_size, sampler=sampler, num_workers=1, drop_last=True
         )
     while True:
         yield from loader

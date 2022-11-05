@@ -159,14 +159,14 @@ class TensorBoardOutputFormat(KVWriter):
         prefix = "events"
         path = osp.join(osp.abspath(dir), prefix)
         import tensorflow as tf
-        from tensorflow.python import pywrap_tensorflow
+        from tensorflow.python.client import _pywrap_events_writer
         from tensorflow.core.util import event_pb2
         from tensorflow.python.util import compat
 
         self.tf = tf
         self.event_pb2 = event_pb2
-        self.pywrap_tensorflow = pywrap_tensorflow
-        self.writer = pywrap_tensorflow.EventsWriter(compat.as_bytes(path))
+        # self.pywrap_tensorflow = pywrap_tensorflow
+        self.writer = tf.summary.create_file_writer("/mylogs")
 
     def writekvs(self, kvs):
         def summary_val(k, v):
@@ -178,8 +178,9 @@ class TensorBoardOutputFormat(KVWriter):
         event.step = (
             self.step
         )  # is there any reason why you'd want to specify the step?
-        self.writer.WriteEvent(event)
-        self.writer.Flush()
+        with self.writer.as_default():
+            tf.summary.scalar(value=[summary_val(k, v) for k, v in kvs.items()], step=self.step)
+            writer.flush()
         self.step += 1
 
     def close(self):

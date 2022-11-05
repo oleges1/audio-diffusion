@@ -1,4 +1,3 @@
-
 from ctypes import sizeof
 import torch
 import numpy as np
@@ -87,10 +86,6 @@ class GeneralH(H_functions):
 
         ZERO = 1e-3
         self._singulars[self._singulars < ZERO] = 0
-<<<<<<< HEAD
-        print(len([x.item() for x in self._singulars if x == 0]))
-=======
->>>>>>> 26fc42433c2409fae8dbe96c9b87feab8140430e
 
     def V(self, vec):
         return self.mat_by_vec(self._V, vec.clone())
@@ -146,7 +141,6 @@ class Inpainting(H_functions):
         return self._singulars
 
     def add_zeros(self, vec):
-
         temp = torch.zeros((vec.shape[0], self.channels * self.img_dim1 * self.img_dim2), device=vec.device)
         reshaped = vec.clone().reshape(vec.shape[0], -1)
         temp[:, :reshaped.shape[1]] = reshaped

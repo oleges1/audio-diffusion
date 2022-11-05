@@ -124,15 +124,17 @@ def main():
             print(sample.shape, "sample, should be three dimensions")
             
             plt.figure(figsize=(10, 10))
-            librosa.display.specshow(librosa.power_to_db(sample[0][0].cpu(), ref=np.max), x_axis='time',
+            librosa.display.specshow(librosa.power_to_db(sample[0][0].cpu().numpy(), ref=np.max), x_axis='time',
                             y_axis='mel', sr=16000,
                             fmax=8000)
             plt.colorbar()
             plt.savefig('speca_sample.png')
             plt.close()
-            
-            wavs = to_waveform(interpolate(sample[:, 0, :, :], (1026, 32)), args.n_fft, args.hop_size, args.win_size).contiguous()
+
+            wavs = to_waveform(interpolate(sample, (1026, 32)).squeeze(1), args.n_fft, args.hop_size, args.win_size).contiguous()
             print(wavs.shape, "wavs, should be only one batch dimension")
+
+            torchaudio.save('wav_from_speca.wav', wavs[0].cpu(), 16000)
 
             gathered_samples = [th.zeros_like(wavs) for _ in range(dist.get_world_size())]
             dist.all_gather(gathered_samples, wavs)  # gather not supported with NCCL
@@ -162,10 +164,10 @@ def create_argparser():
     defaults = dict(
         clip_denoised=True,
         num_samples=1,
-        batch_size=2,
+        batch_size=1,
         use_ddim=False,
         use_ddrm=False,
-        model_path="speca_corrected_b01_noise_continue/model340000.pt",
+        model_path="logs/model730000.pt",
         sigma_0=0.00000001,
         etaA=0.85,
         etaB=0.85,

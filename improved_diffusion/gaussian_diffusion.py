@@ -11,9 +11,10 @@ import math
 import numpy as np
 import torch as th
 
-# import librosa
-# import librosa.display
+import librosa
+import librosa.display
 import matplotlib.pyplot as plt
+import librosa
 from tqdm import tqdm
 from einops import rearrange
 import torchaudio
@@ -22,7 +23,6 @@ from torchaudio.transforms import Spectrogram
 
 from .nn import mean_flat
 from .losses import normal_kl, discretized_gaussian_log_likelihood
-
 from .vctk import spectrogram
 
 plt.rcParams.update({'font.size': 20})
@@ -553,17 +553,16 @@ class GaussianDiffusion:
         sigma_y = sigma_0
         sigma_y = 2 * sigma_y
         indices = list(range(self.num_timesteps))
-
         print(clear_signal.size())
         if trained_on == 'speca':
             signal = clear_signal.unsqueeze(1).cuda()
-            # plot_speca(clear_signal[0].cpu(), 'initial_speca.png')
+            plot_speca(clear_signal[0].cpu(), 'initial_speca.png')
             
         elif trained_on == 'wav':
             signal = clear_signal.cuda().unsqueeze(1).transpose(2, 3)
             img_initial = signal[0][0].cpu()
             print(signal.size())
-            torchaudio.save('initial_wav.wav', clear_signal[0].cpu(), 16000)
+            #torchaudio.save('initial_wav.wav', clear_signal[0].cpu(), 16000)
             # plot_wav(signal[0][0].cpu().transpose(1, 0).numpy(), 'initial_wav.png')
             #speca = librosa.core.stft(clear_signal.cpu().numpy(), hop_length=256, win_length=1024, n_fft=1024, center=False)
            #speca = th.from_numpy(np.abs(speca))[0][0]
@@ -576,11 +575,17 @@ class GaussianDiffusion:
             corrupted_img = signal.reshape(signal.size(0), signal.size(1)*signal.size(2)*signal.size(3))[0]
             corrupted_img[missing] = 0
             corrupted_img = corrupted_img.reshape(signal.size()[1:])[0].cpu()
-            # plot_speca(corrupted_img, 'degraded_speca.png')
+            plot_speca(corrupted_img, 'degraded_speca.png')
 
         elif trained_on == 'wav':
-            diag = th.from_numpy(np.tile([1, 0], signal.size(2)//2 + 1))[:signal.size(2)]
+            diag = th.from_numpy(np.tile([1, 0, 0], signal.size(2)//3 + 3))[:signal.size(2)] #deleting intermediate samples
             H_matrix = th.diag(diag).type(th.FloatTensor).cuda()
+
+            # ident = th.diag(th.from_numpy(np.repeat(1, signal.size(2)/4)), diagonal=0).type(th.FloatTensor).cuda()
+            # k = th.tensor([0.25, 0.25, 0.25, 0.25]).type(th.FloatTensor).cuda().unsqueeze(1).transpose(0, 1)
+            # H_matrix = th.kron(ident, k) 
+
+           
             # corrupted_img = H_matrix @ signal[0][0]
             from .svd_replacement import GeneralH
             H_funcs = GeneralH(H_matrix)
@@ -595,7 +600,7 @@ class GaussianDiffusion:
 
         if trained_on == 'wav':
             print(y0.size())
-            torchaudio.save('degraded_wav.wav', y0.unsqueeze(2)[0].transpose(0, 1).cpu(), 16000)
+           # torchaudio.save('degraded_wav.wav', y0.unsqueeze(2)[0].transpose(0, 1).cpu(), 16000)
             img_corrupted =  y0[0].unsqueeze(1).cpu()
             # plot_wav(y0[0].unsqueeze(1).transpose(1, 0).cpu().numpy(), 'corrupted_wav.png')
 
@@ -608,38 +613,38 @@ class GaussianDiffusion:
         denoised, pred_xstart = self.ddrm_sampling_loop(img.cuda(), indices, model, th.from_numpy(self.betas).cuda(), H_funcs, y0, sigma_y, etaA, etaB, etaC, model_kwargs, trained_on=trained_on)
         
 
-        # if trained_on == 'speca':
-        #     # plot_speca(denoised[0][0].cpu(), 'restored_speca.png')
-        # elif trained_on == 'wav':
-        #     torchaudio.save('restored_wav.wav', denoised[0][0].transpose(0, 1).cpu(), 16000)
-        #     # plot_wav(denoised[0][0].cpu().transpose(0, 1).numpy(), 'restored_wav.png')
-        #     img_restored =  denoised[0][0].cpu()
+        if trained_on == 'speca':
+            plot_speca(denoised[0][0].cpu(), 'restored_speca.png')
+        elif trained_on == 'wav':
+           # torchaudio.save('restored_wav.wav', denoised[0][0].transpose(0, 1).cpu(), 16000)
+            # plot_wav(denoised[0][0].cpu().transpose(0, 1).numpy(), 'restored_wav.png')
+            img_restored =  denoised[0][0].cpu()
 
 
-#         fig, axs = plt.subplots(3, 1,  figsize=(20, 20))
-#         axs[0].plot(img_initial)
-#         axs[0].set_title('Initial wav')
-#         axs[1].plot(img_corrupted)
-#         axs[1].set_title('Degraded wav')
-#         axs[2].plot(img_restored)
-#         axs[2].set_title('Restored wav')
-#         plt.savefig(f'wav_result_model_{trained_on}.png')
-#         plt.close()
+        fig, axs = plt.subplots(3, 1,  figsize=(20, 20))
+        axs[0].plot(img_initial)
+        axs[0].set_title('Initial wav')
+        axs[1].plot(img_corrupted)
+        axs[1].set_title('Degraded wav')
+        axs[2].plot(img_restored)
+        axs[2].set_title('Restored wav')
+        plt.savefig(f'wav_result_model_{trained_on}.png')
+        plt.close()
 
-#         fig, axs = plt.subplots(3, 1,  figsize=(40, 40))
-#         values, ybins, xbins, im1 = axs[0].specgram(clear_signal[0][0].cpu().numpy(), Fs=16000,  NFFT = 1024)
-#         axs[0].set_title('Initial spectrogram')
-#         values, ybins, xbins, im2 = axs[1].specgram(y0[0].cpu().numpy(), Fs=16000, NFFT = 1024)
-#         axs[1].set_title('Degraded spectrogram')
-#         values, ybins, xbins, im3 = axs[2].specgram(denoised[0][0].transpose(0, 1)[0].cpu().numpy(), Fs=16000,  NFFT = 1024)
-#         axs[2].set_title('Restored spectrogram')
-#         fig.colorbar(im1, ax=axs[0])
-#         fig.colorbar(im2, ax=axs[1])
-#         fig.colorbar(im3, ax=axs[2])
-#         plt.savefig(f'speca_result_model_{trained_on}.png')
-#         plt.close()
+        # fig, axs = plt.subplots(3, 1,  figsize=(40, 40))
+        # values, ybins, xbins, im1 = axs[0].specgram(clear_signal[0][0].cpu().numpy(), Fs=16000,  NFFT = 1024)
+        # axs[0].set_title('Initial spectrogram')
+        # values, ybins, xbins, im2 = axs[1].specgram(y0[0].cpu().numpy(), Fs=16000, NFFT = 1024)
+        # axs[1].set_title('Degraded spectrogram')
+        # values, ybins, xbins, im3 = axs[2].specgram(denoised[0][0].transpose(0, 1)[0].cpu().numpy(), Fs=16000,  NFFT = 1024)
+        # axs[2].set_title('Restored spectrogram')
+        # fig.colorbar(im1, ax=axs[0])
+        # fig.colorbar(im2, ax=axs[1])
+        # fig.colorbar(im3, ax=axs[2])
+        # plt.savefig(f'speca_result_model_{trained_on}.png')
+        # plt.close()
 
-        return denoised
+        return denoised, y0.unsqueeze(2)
 
     def ddrm_sampling_loop(
             self, 
@@ -668,13 +673,10 @@ class GaussianDiffusion:
             Sigma = th.zeros(x.shape[1]*x.shape[2]*x.shape[3], device=x.device)
             Sigma[:singulars.shape[0]] = singulars
             U_t_y = H_funcs.Ut(y_0)
-            Sig_inv_U_t_y = U_t_y / singulars[:U_t_y.shape[-1]]
+            Sig_inv_U_t_y = U_t_y / singulars[:U_t_y.shape[-1]] #y_bar
 
             #initialize x_T as given in the paper
-            # skip = self.num_timesteps // self.args.timesteps
-            # seq = range(0, self.num_timesteps, skip)
-            largest_alphas = compute_alpha(th.from_numpy(betas), (th.ones(x.size(0)) * seq[-1]).to(x.device).long())
-
+            largest_alphas = compute_alpha(betas, (th.ones(x.size(0)) * seq[-1]).to(x.device).long())
             largest_sigmas = (1 - largest_alphas).sqrt() / largest_alphas.sqrt()
             large_singulars_index = th.where(singulars * largest_sigmas[0, 0, 0, 0] > sigma_0)
             inv_singulars_and_zero = th.zeros(x.shape[1] * x.shape[2] * x.shape[3]).to(singulars.device)
@@ -698,12 +700,17 @@ class GaussianDiffusion:
             x0_preds = []
             xs = [x]
 
-
+            # plt.figure(figsize=(10, 10))
+            # librosa.display.specshow(librosa.power_to_db(x[0][0].cpu(), ref=np.max), x_axis='time',
+            #                 y_axis='mel', sr=16000,
+            #                 fmax=8000)
+            # plt.colorbar()
+            # plt.savefig(f'speca_1round.png')
+            # plt.close()
             #iterate over the timesteps
             for i, j in tqdm(zip(reversed(seq), reversed(seq_next))):
                 t = (th.ones(n) * i).to(x.device)
                 next_t = (th.ones(n) * j).to(x.device)
-
                 at = compute_alpha(betas, t.long())
                 at_next = compute_alpha(betas, next_t.long())
                 xt = xs[-1].to(x.device)
@@ -721,7 +728,7 @@ class GaussianDiffusion:
                     et = et[:, :3]
 
                 if trained_on == 'wav':
-                    torchaudio.save("sampled.wav", et[0][0].cpu(), 16000)
+                    # torchaudio.save("sampled.wav", et[0][0].cpu(), 16000)
                     # et = librosa.core.stft(et.cpu().numpy(), hop_length=256, win_length=1024, n_fft=1024, center=False)
                     # et = th.from_numpy(np.abs(et)).cuda()
                     x0_t =  self._predict_xstart_from_eps(xt, t.long(), et)#(xt - et * (1 - at).sqrt()) / at.sqrt()
@@ -778,6 +785,7 @@ class GaussianDiffusion:
 
                 x0_preds.append(x0_t.to('cpu'))
                 xs.append(xt_next.to('cpu'))
+
 
         return xs[-1], x0_preds[-1]
 
@@ -1147,22 +1155,26 @@ def _extract_into_tensor(arr, timesteps, broadcast_shape):
         res = res[..., None]
     return res.expand(broadcast_shape)
 
+def plot_speca(img, filename):
+    plt.figure(figsize=(10, 10))
+    librosa.display.specshow(librosa.power_to_db(img, ref=np.max), x_axis='time',
+                    y_axis='mel', sr=16000,
+                    fmax=8000)
+    plt.colorbar()
+    plt.savefig(filename)
+    plt.close()
 
-# def plot_speca(img, filename):
-#     plt.figure(figsize=(10, 10))
-#     librosa.display.specshow(librosa.power_to_db(img, ref=np.max), x_axis='time',
-#                     y_axis='mel', sr=16000,
-#                     fmax=8000)
-#     plt.colorbar()
-#     plt.savefig(filename)
-#     plt.close()
+def plot_wav(img, filename):
+    plt.figure(figsize=(10, 10))
+    librosa.display.waveshow(img, sr=16000)
+    plt.savefig(filename)
+    plt.close()
 
-# def plot_wav(img, filename):
-#     plt.figure(figsize=(10, 10))
-#     librosa.display.waveshow(img, sr=16000)
-#     plt.savefig(filename)
-#     plt.close()
+def wav_to_speca(wav, n_fft=1024, hop_size=256, win_size=102, center=False):
+    transform = Spectrogram(n_fft=n_fft, hop_length=hop_size, win_length=win_size, center=center, pad_mode='reflect', normalized=False, onesided=True)
+    return librosa.power_to_db(transform(wav).numpy(), ref=np.max)
 
-# def wav_to_speca(wav, n_fft=1024, hop_size=256, win_size=102, center=False):
-#     transform = Spectrogram(n_fft=n_fft, hop_length=hop_size, win_length=win_size, center=center, pad_mode='reflect', normalized=False, onesided=True)
-#     return librosa.power_to_db(transform(wav).numpy(), ref=np.max)
+
+
+
+

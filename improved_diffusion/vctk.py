@@ -4,7 +4,7 @@ import torchaudio
 import random
 from torchaudio import datasets
 import torchaudio.functional as AF
-
+from librosa.filters import mel as librosa_mel_fn
 from einops import rearrange
 
 hann_window = {}
@@ -50,13 +50,13 @@ class DRVCTK(datasets.DR_VCTK):
 
         audio = torch.FloatTensor(audio)
         # audio = audio.unsqueeze(0)
-
-        if audio.size(1) >= self.segment_size:
-            max_audio_start = audio.size(1) - self.segment_size
-            audio_start = random.randint(0, max_audio_start)
-            audio = audio[:, audio_start:audio_start+self.segment_size]
-        else:
-            audio = torch.nn.functional.pad(audio, (0, self.segment_size - audio.size(1)), 'constant')
+        if self.subset == 'train':
+            if audio.size(1) >= self.segment_size:
+                max_audio_start = audio.size(1) - self.segment_size
+                audio_start = random.randint(0, max_audio_start)
+                audio = audio[:, audio_start:audio_start+self.segment_size]
+            else:
+                audio = torch.nn.functional.pad(audio, (0, self.segment_size - audio.size(1)), 'constant')
         
         if self.raw_wave:
             return audio, {}
@@ -74,14 +74,10 @@ class DRVCTK(datasets.DR_VCTK):
     
 
 class VCTK(datasets.VCTK_092):
-    """
-    VCTK.092
-    """
-
     def __init__(
             self, root, segment_size, n_fft, 
             hop_size, win_size, raw_wave,
-             zero_out_percent=None, transform=None
+             zero_out_percent=None
         ):
         super().__init__(root, download=False)
         self.segment_size = segment_size
@@ -90,7 +86,7 @@ class VCTK(datasets.VCTK_092):
         self.win_size = win_size
         self.zero_out_percent = zero_out_percent
         self.raw_wave = raw_wave
-        self.transform = transform
+
 
     def __getitem__(self, i):
         
@@ -117,5 +113,4 @@ class VCTK(datasets.VCTK_092):
             speca[:, speca.shape[1] // 2:] = 0
 
         speca = rearrange(speca, 'B S T D -> B (S D) T')
-
-        return self.transform(speca), {}
+        return speca.squeeze(0), {}
