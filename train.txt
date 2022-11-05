@@ -1,1 +1,0 @@
-mpiexec -n 2 python scripts/spec_train.py --batch_size 8
